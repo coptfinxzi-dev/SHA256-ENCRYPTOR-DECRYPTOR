@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AES-256 Encryptor / Decryptor</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body  class="body">
+    <input  type="text" id="textInput" placeholder="Your secret to encrypt/decrypt" style="width: 300px;">
+    <input type="password" id="passwordInput" placeholder="Secret Password">
+    
+    <button onclick="handleEncrypt()">Encrypt my secret!</button>
+    <button onclick="handleDecrypt()">Decrypt my secret!</button>
+
+    <p><strong>Result:</strong> <span id="output"></span></p>
+
+    <script>
+        async function generateKey(password, salt) {
+            const enc = new TextEncoder();
+            const keyMaterial = await crypto.subtle.importKey(
+                'raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']
+            );
+            return crypto.subtle.deriveKey(
+                { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+                keyMaterial,
+                { name: 'AES-GCM', length: 256 },
+                false,
+                ['encrypt', 'decrypt']
+            );
+        }
+
+        async function encryptText(text, password) {
+            const salt = crypto.getRandomValues(new Uint8Array(16));
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const key = await generateKey(password, salt);
+            const encrypted = await crypto.subtle.encrypt(
+                { name: 'AES-GCM', iv }, key, new TextEncoder().encode(text)
+            );
+
+            const combined = new Uint8Array(salt.length + iv.length + encrypted.byteLength);
+            combined.set(salt, 0);
+            combined.set(iv, salt.length);
+            combined.set(new Uint8Array(encrypted), salt.length + iv.length);
+
+            return btoa(String.fromCharCode(...combined));
+        }
+
+        async function decryptText(base64Data, password) {
+            const combined = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+            const salt = combined.slice(0, 16);
+            const iv = combined.slice(16, 28);
+            const encrypted = combined.slice(28);
+
+            const key = await generateKey(password, salt);
+            const decrypted = await crypto.subtle.decrypt(
+                { name: 'AES-GCM', iv }, key, encrypted
+            );
+            return new TextDecoder().decode(decrypted);
+        }
+
+        async function handleEncrypt() {
+            const text = document.getElementById('textInput').value;
+            const password = document.getElementById('passwordInput').value;
+            const output = document.getElementById('output');
+
+            if (!text || !password) {
+                output.textContent = 'Please enter both text and a password.';
+                return;
+            }
+
+            try {
+                const encryptedString = await encryptText(text, password);
+                output.textContent = encryptedString;
+            } catch (err) {
+                output.textContent = 'Encryption failed.';
+            }
+        }
+
+        async function handleDecrypt() {
+            const encryptedString = document.getElementById('textInput').value;
+            const password = document.getElementById('passwordInput').value;
+            const output = document.getElementById('output');
+
+            if (!encryptedString || !password) {
+                output.textContent = 'Please enter the encrypted string and password.';
+                return;
+            }
+
+            try {
+                const decryptedString = await decryptText(encryptedString, password);
+                output.textContent = decryptedString;
+            } catch (err) {
+                output.textContent = 'Decryption failed (wrong password or corrupted text).';
+            }
+        }
+    </script>
+</body>
+</html>
